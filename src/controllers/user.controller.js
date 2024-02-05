@@ -5,6 +5,20 @@ import {uploadOnCloudinary} from "../utils/cloudinary.js"
 import { ApiResponse } from "../utils/ApiResponse.js";
 
 
+const generateAccesAndRefreshToken=async(userId)=>{
+    try{
+        const user= await User.findById(userId);
+        const accessToken=user.generateAccessToken
+        const refreshToken=user.generateRefreshToken
+        user.refreshToken=refreshToken;
+        await user.save({validateBeforeSave:false})
+        //when we save user it require password so turn validateBeforeSave false 
+        return {accessToken,refreshToken}
+
+    }catch(err){
+        throw new ApiError(500,"something went wrong while generating refresh and access token")
+    }
+}
 
 
 const registerUser = asyncHandler( async (req, res) => {
@@ -20,7 +34,7 @@ const registerUser = asyncHandler( async (req, res) => {
 
 
     const {fullname, email, username, password } = req.body
-    //console.log("email: ", email);
+    console.log("email: ", email);
 
     if (
         [fullname, email, username, password].some((field) => field?.trim() === "")
@@ -38,13 +52,7 @@ const registerUser = asyncHandler( async (req, res) => {
     //console.log(req.files);
 
     const avatarLocalPath = req.files?.avatar[0]?.path;
-     //const coverImageLocalPath = req.files?.coverImage[0]?.path;
-     //when we use this method let say cover image is undified the coveImage[0] will true and
-     // how we get path from undefined so we have to use another method
-
-
-
-
+    //const coverImageLocalPath = req.files?.coverImage[0]?.path;
 
     let coverImageLocalPath;
     if (req.files && Array.isArray(req.files.coverImage) && req.files.coverImage.length > 0) {
@@ -88,10 +96,61 @@ const registerUser = asyncHandler( async (req, res) => {
 } )
 
 
+const loginUser=asyncHandler(async(req,res)=>{
+    
+    const{username,password,email}=req.body;
+
+    if(!email||!username){
+        throw new ApiError(400,"username or password is required")
+    }
+
+    const user=await User.findOne({
+        $or:[{username},{email}]
+    })
+    
+    if(!user){throw new ApiError(404,"user does't exit")}
+
+    const isPasswordvalid=await user.isPasswordCorrect(password);
+    //The method we have to acces is by small user which is defined by us 
+    //User is mongoose user
+    if(!isPasswordvalid){throw new ApiError(401,"password incorrect")}
+
+    const {accessToken,refreshToken}=await generateAccesAndRefreshToken(user._id)
+
+    const loggedUser=await User.findById(user._id).
+    select("-password -refreshToken")
+
+    const options={
+        httpOnly:true,
+        secure:true
+    }
+
+
+    return res.status(200)
+    .cookie("accessToken",accessToken,options)
+    .cookie("refreshToken",refreshToken,options)
+    .json(new ApiResponse(200,{user:loggedUser,accessToken,refreshToken},"user logged in succesfully"))
+
+
+
+
+
+
+
+})
+
+
+const logoutUser=asyncHandler(async(req,res)=>{
+    User.findById()
+
+})
+
 
 
 
 export {
     registerUser,
+    loginUser,
+    logoutUser
    
 }
